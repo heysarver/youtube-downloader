@@ -6,7 +6,8 @@ venv
 *.pyc
 __pycache__
 output/*
-**/*.mp3
-**/*.mp4
-**/*.webm
-**/*.part
+*.mp3
+*.mp4
+*.webm
+*.part
+*.ytdl
