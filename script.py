@@ -1,9 +1,10 @@
 import os
 import sys
 import yt_dlp
+from yt_dlp.utils import DownloadError
 
 
-def download_playlist(url, audio_only, prefix_index, output_dir, force_replace):
+def download(url, audio_only, prefix_index, output_dir, force_replace):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -14,14 +15,19 @@ def download_playlist(url, audio_only, prefix_index, output_dir, force_replace):
             pass
 
         def warning(self, msg):
-            pass
+            print(f"WARNING: {msg}")
 
         def error(self, msg):
-            print(msg)
+            print(f"ERROR: {msg}")
 
     # Function to generate the output template and check if files exist
     def generate_outtmpl(path_template, info_dict):
-        return path_template % info_dict
+        try:
+            return path_template % info_dict
+        except KeyError:
+            if '%(playlist_index)' in path_template:
+                return path_template.replace('%(playlist_index)03d-', '') % info_dict
+            raise
 
     outtmpl_template = '%(playlist_index)03d-%(title)s.%(ext)s' if prefix_index else '%(title)s.%(ext)s'
     outtmpl_path = os.path.join(output_dir, outtmpl_template)
@@ -32,23 +38,24 @@ def download_playlist(url, audio_only, prefix_index, output_dir, force_replace):
             output_path = generate_outtmpl(outtmpl_path, d['info_dict'])
             if os.path.exists(output_path) and not force_replace:
                 print(f"File '{output_path}' already exists and was skipped.")
-                return True  # Skip downloading
-        return False  # Don't skip
+                d['status'] = 'finished'
+                return
 
     ydl_opts = {
-        'noplaylist': False,             # Ensure that we process the entire playlist
-        'yesplaylist': True,
         'logger': MyLogger(),
-        'outtmpl': outtmpl_path,         # Output template with optional playlist index
         'progress_hooks': [file_exists_hook],  # Check for existing files
+        # Output template with optional playlist index
+        'outtmpl': outtmpl_path,
+        # Number of times to retry in case of network issues
+        'retries': 3,
     }
 
     if audio_only:
         ydl_opts.update({
-            'format': 'bestaudio/best',   # Only download audio
-            'postprocessors': [{          # Extract audio using ffmpeg or avconv
+            'format': 'bestaudio/best',        # Only download audio
+            'postprocessors': [{               # Extract audio using ffmpeg or avconv
                 'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',  # Change to your preferred format
+                'preferredcodec': 'mp3',       # Change to your preferred format
                 'preferredquality': '192',
             }]
         })
@@ -59,13 +66,16 @@ def download_playlist(url, audio_only, prefix_index, output_dir, force_replace):
         })
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
+        try:
+            ydl.download([url])
+        except DownloadError as e:
+            print(f"Download error: {e}")
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(
-            "Usage: python script.py [--audio-only] [--prefix-index] [--output-dir OUTPUT_DIR] [--force-replace] <playlist_url>")
+            "Usage: python script.py [--audio-only] [--prefix-index] [--output-dir OUTPUT_DIR] [--force-replace] <url>")
         sys.exit(1)
 
     # Check for command-line options
@@ -93,14 +103,13 @@ if __name__ == "__main__":
 
     if len(sys.argv) != 2:
         print(
-            "Usage: python script.py [--audio-only] [--prefix-index] [--output-dir OUTPUT_DIR] [--force-replace] <playlist_url>")
+            "Usage: python script.py [--audio-only] [--prefix-index] [--output-dir OUTPUT_DIR] [--force-replace] <url>")
         sys.exit(1)
 
-    playlist_url = sys.argv[1]
+    url = sys.argv[1]
 
-    if not playlist_url.startswith("http"):
+    if not url.startswith("http"):
         print("Invalid URL provided.")
         sys.exit(1)
 
-    download_playlist(playlist_url, audio_only, prefix_index,
-                      output_dir, force_replace)
+    download(url, audio_only, prefix_index, output_dir, force_replace)
